@@ -94,6 +94,7 @@ class RitsModel(Model):
         self.completion_cost = completion_cost
         self.total_cost = 0.0
 
+        print(f"At rits.py openai key is {openai.api_key}")
         if not openai.api_key:
             openai.api_key = os.getenv("RITS_API_KEY")
 
@@ -110,6 +111,7 @@ class RitsModel(Model):
             assert False, f'Unsupported model {engine}'
 
         self.client = openai.OpenAI(
+            api_key="EMPTY",
             base_url=self.base_url,
             default_headers={"RITS_API_KEY": os.environ.get("RITS_API_KEY")},
         )

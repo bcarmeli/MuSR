@@ -35,15 +35,15 @@ if __name__ == "__main__":
     # Example of how to use a "Madlib" - often times the datasets themselves will have more obscure/advanced uses of
     # them wrapped in a function.
 
-    from src.utils.paths import ROOT_FOLDER
+    from src.utils.paths import DOMAIN_SEED_FOLDER
 
     madlib = Madlib(
         {
-            "names": ROOT_FOLDER / 'domain_seed/names.json',
-            "motives": ROOT_FOLDER / 'domain_seed/motives.json',
-            "murder_weapons": ROOT_FOLDER / 'domain_seed/murder_weapons.json',
-            "relationships": ROOT_FOLDER / 'domain_seed/relationships.json',
-            "crime_scenes": ROOT_FOLDER / 'domain_seed/crime_scenes.json'
+            "names": DOMAIN_SEED_FOLDER / 'names.json',
+            "motives": DOMAIN_SEED_FOLDER / 'motives.json',
+            "murder_weapons": DOMAIN_SEED_FOLDER / 'murder_weapons.json',
+            "relationships": DOMAIN_SEED_FOLDER / 'relationships.json',
+            "crime_scenes": DOMAIN_SEED_FOLDER / 'crime_scenes.json'
         }
     )
 

@@ -24,7 +24,7 @@ from src import cache
 from src.model import OpenAIModel
 from src.logic_tree.tree import LogicTree, LogicNode, LogicNodeFactType
 from src.madlib.madlib import Madlib
-from src.utils.paths import OUTPUT_FOLDER, ROOT_FOLDER
+from src.utils.paths import OUTPUT_FOLDER, DOMAIN_SEED_FOLDER
 
 from src.dataset_types.murder_mystery_dataset import MurderMysteryDataset
 
@@ -159,15 +159,15 @@ def main():
 
     madlib = Madlib(
         {
-            "male_names": ROOT_FOLDER / 'domain_seed/male_names.json',
-            "female_names": ROOT_FOLDER / 'domain_seed/female_names.json',
-            "male_relationships": ROOT_FOLDER / 'domain_seed/male_relationships.json',
-            "female_relationships": ROOT_FOLDER / 'domain_seed/female_relationships.json',
-            "motives": ROOT_FOLDER / 'domain_seed/strong_motives.json',
-            "murder_weapons": ROOT_FOLDER / 'domain_seed/murder_weapons.json',
-            "relationships": ROOT_FOLDER / 'domain_seed/relationships.json',
-            "crime_scenes": ROOT_FOLDER / 'domain_seed/crime_scenes.json',
-            'red_herrings': ROOT_FOLDER / 'domain_seed/suspicious_facts.json',
+            "male_names": DOMAIN_SEED_FOLDER / 'male_names.json',
+            "female_names": DOMAIN_SEED_FOLDER / 'female_names.json',
+            "male_relationships": DOMAIN_SEED_FOLDER / 'male_relationships.json',
+            "female_relationships": DOMAIN_SEED_FOLDER / 'female_relationships.json',
+            "motives": DOMAIN_SEED_FOLDER / 'strong_motives.json',
+            "murder_weapons": DOMAIN_SEED_FOLDER / 'murder_weapons.json',
+            "relationships": DOMAIN_SEED_FOLDER / 'relationships.json',
+            "crime_scenes": DOMAIN_SEED_FOLDER / 'crime_scenes.json',
+            'red_herrings': DOMAIN_SEED_FOLDER / 'domain_seed/suspicious_facts.json',
         }
     )
 
