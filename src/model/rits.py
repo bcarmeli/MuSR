@@ -10,7 +10,8 @@ import random
 
 from typing import List, Dict, Union, Any, Generator
 
-from openai.types.chat import ChatCompletion
+from openai import Stream
+from openai.types.chat import ChatCompletion, ChatCompletionChunk
 from tqdm import tqdm
 from transformers import GPT2TokenizerFast
 
@@ -103,6 +104,8 @@ class RitsModel(Model):
             self.base_url = 'https://inference-3scale-apicast-production.apps.rits.fmaas.res.ibm.com/granite-3-0-8b-instruct/v1'
         elif engine in ["meta-llama/llama-3-1-70b-instruct"]:
             self.base_url = 'https://inference-3scale-apicast-production.apps.rits.fmaas.res.ibm.com/llama-3-1-70b-instruct/v1'
+        elif engine == "microsoft/phi-4":
+            self.base_url = 'https://inference-3scale-apicast-production.apps.rits.fmaas.res.ibm.com/microsoft-phi-4/v1'
         else:
             assert False, f'Unsupported model {engine}'
 
@@ -145,7 +148,7 @@ class RitsModel(Model):
             logprobs: int = None,
             num_samples: int = None,
             echo: bool = None
-    ) -> Dict[str, Union[str, bool]]:
+    ) -> ChatCompletion | Stream[ChatCompletionChunk]: # Dict[str, Union[str, bool]]:
         if max_tokens is None:
             max_tokens = self.max_tokens
         if temperature is None:
@@ -172,22 +175,22 @@ class RitsModel(Model):
                     echo=echo,
                     stop=stop_token
                 )
-            except self.client.error.RateLimitError as e:
+            except openai.RateLimitError as e:
                 last_exc = e
                 print(f"ERROR: OPENAI Rate Error: {e}")
                 time.sleep(self.gpt_waittime + int(random.randint(1, 10)))
-            except self.client.error.APIError as e:
-                last_exc = e
-                print(f"ERROR: OPENAI API Error: {e}")
-            except self.client.error.Timeout as e:
-                last_exc = e
-                print(f"ERROR: OPENAI Timeout Error: {e}")
-            except self.client.error.APIConnectionError as e:
+            except openai.APIConnectionError as e:
                 last_exc = e
                 print(f"ERROR: OPENAI APIConnection Error: {e}")
-            except self.client.error.ServiceUnavailableError as e:
+            except openai.APIError as e:
                 last_exc = e
-                print(f"ERROR: OPENAI Service Error: {e}")
+                print(f"ERROR: OPENAI API Error: {e}")
+            except openai.Timeout as e:
+                last_exc = e
+                print(f"ERROR: OPENAI Timeout Error: {e}")
+            except openai.AuthenticationError as e:
+                last_exc = e
+                print(f"ERROR: OPENAI Authentication Error: {e}")
         # make a fake response
         return {
                 "text": prompt + " OPENAI Error - " + str(last_exc),
