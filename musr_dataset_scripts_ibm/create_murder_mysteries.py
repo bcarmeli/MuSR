@@ -167,7 +167,7 @@ def main():
             "murder_weapons": DOMAIN_SEED_FOLDER / 'murder_weapons.json',
             "relationships": DOMAIN_SEED_FOLDER / 'relationships.json',
             "crime_scenes": DOMAIN_SEED_FOLDER / 'crime_scenes.json',
-            'red_herrings': DOMAIN_SEED_FOLDER / 'domain_seed/suspicious_facts.json',
+            'red_herrings': DOMAIN_SEED_FOLDER / 'suspicious_facts.json',
         }
     )
 
