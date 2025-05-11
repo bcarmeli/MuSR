@@ -15,18 +15,15 @@ import sys
 from datetime import time, datetime
 from pathlib import Path
 import random
-
-from src.model.rits import RitsModel
-
-random.seed(0)
-
 from src import cache
-from src.model import OpenAIModel
+from src.model import OpenAIModel, HFModel, RitsModel
 from src.logic_tree.tree import LogicTree, LogicNode, LogicNodeFactType
 from src.madlib.madlib import Madlib
 from src.utils.paths import OUTPUT_FOLDER, DOMAIN_SEED_FOLDER
 
 from src.dataset_types.murder_mystery_dataset import MurderMysteryDataset
+
+random.seed()
 
 """ICL EXAMPLES for creating deductions. See datasetbuilder for more info."""
 example1_description = """
@@ -125,12 +122,13 @@ example_descriptions = [example1_description, example2_description, example3_des
 
 
 def main():
+    redis_logical_db = int(sys.argv[1])
     # CACHE
-    cache.enable()
+    cache.enable(db=redis_logical_db)
 
     # PARAMS (if not with a comment, look at the Murder Mystery dataset class for more info.)
 
-    max_examples = 10
+    max_examples = 200
     tree_depth = 3
 
     max_number_of_suspects = 2
@@ -140,7 +138,7 @@ def main():
     use_validators = True
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    out_file = OUTPUT_FOLDER / f'custom_murder_mysteries_{timestamp}.json'
+    out_file = OUTPUT_FOLDER / f'custom_murder_mysteries_{timestamp}_{redis_logical_db}.json'
     if out_file:
         out_file.parent.mkdir(exist_ok=True, parents=True)
 
@@ -150,8 +148,15 @@ def main():
 
     # Models we foudn helpful to use.  In our finalized dataset, we only used gpt4.
     phi4_gpt35 = RitsModel(engine='microsoft/phi-4', api_endpoint='chat', api_max_attempts=30, temperature=1.0, max_tokens=1500, num_samples=1, prompt_cost=0.0015/1000, completion_cost=0.002/1000)
-    phi4_16k35 = RitsModel(engine='microsoft/phi-4', api_endpoint='chat', api_max_attempts=30, temperature=1.0, max_tokens=2400, num_samples=1, prompt_cost=0.003/1000, completion_cost=0.004/1000)
-    phi4_gpt4 = RitsModel(engine='microsoft/phi-4', api_max_attempts=30, api_endpoint='chat', temperature=1.0, top_p=1.0, max_tokens=2400, num_samples=1, prompt_cost=0.03/1000, completion_cost=0.06/1000)
+    # phi4_16k35 = RitsModel(engine='microsoft/phi-4', api_endpoint='chat', api_max_attempts=30, temperature=1.0, max_tokens=2400, num_samples=1, prompt_cost=0.003/1000, completion_cost=0.004/1000)
+    # phi4_gpt4 = RitsModel(engine='microsoft/phi-4', api_max_attempts=30, api_endpoint='chat', temperature=1.0, top_p=1.0, max_tokens=2400, num_samples=1, prompt_cost=0.03/1000, completion_cost=0.06/1000)
+    # phi4_gpt35 = HFModel(model_name='microsoft/Phi-4-reasoning-plus')
+
+    # phi4_gpt35 = HFModel(model_name="simplescaling/s1.1-1.5B")
+    # phi4_gpt35 = HFModel(model_name='microsoft/Phi-4-reasoning-plus')
+    # phi4_gpt35 = HFModel(model_name='microsoft/Phi-4')
+    phi4_16k35 = phi4_gpt35
+    phi4_gpt4 = phi4_gpt35
 
     model_to_use = phi4_16k35
 
@@ -182,6 +187,7 @@ def main():
 
     # CREATION LOGIC
     for example_idx in range(max_examples):
+        story_start_time = datetime.now()
         print(f"STORY: {example_idx+1}")
 
         # Setup Scenario (MadLib)
@@ -239,6 +245,9 @@ def main():
         suspect_trees = creator.create_chapter_trees(suspect_trees, max_num_of_suspicious_facts=max_num_suspicious_facts)
 
         suspect_trees = creator.create_chapter(model_to_use, suspect_trees, validate_model=model_to_use)
+        if suspect_trees is None:
+            print("Boaz Add - Bad suspect_trees. skip this one. I do not know how to delete from the redis cache")
+            continue
 
         # Because we only created chapters of the murder, we need an introduction to it.  Here we create a prompt to do that.
         sus_strings = ", ".join([x['suspect_info']['suspect'] for x in suspect_trees])
@@ -286,7 +295,7 @@ def main():
 
             if out_file:
                 json.dump(dataset, out_file.open('w'))
-
+        print(f"GENERATION TIME for STORY {example_idx + 1}: {(datetime.now() - story_start_time) * 1000} secs")
     if out_file:
         json.dump(dataset, out_file.open('w'))
 

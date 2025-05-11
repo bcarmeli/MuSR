@@ -35,14 +35,18 @@ def main():
     There are also a ton of parameters you can set to control the eval and visualize intermediate answers etc.
     """
     input_file_name = sys.argv[1]
+    redis_logical_db = int(sys.argv[2])
+
     # CACHE
-    cache.enable()
+    cache.enable(db=redis_logical_db)
 
     DATASETS_FOLDER = OUTPUT_FOLDER
 
     # phi4_gpt35 = RitsModel(engine='microsoft/phi-4', api_endpoint='chat', api_max_attempts=30, temperature=1.0, max_tokens=1500, num_samples=1, prompt_cost=0.0015/1000, completion_cost=0.002/1000)
     # phi4_16k35 = RitsModel(engine='microsoft/phi-4', api_endpoint='chat', api_max_attempts=30, temperature=1.0, max_tokens=2400, num_samples=1, prompt_cost=0.003/1000, completion_cost=0.004/1000)
-    phi4 = RitsModel(engine='microsoft/phi-4', api_max_attempts=30, api_endpoint='chat', temperature=1.0, top_p=1.0, max_tokens=2400, num_samples=1, prompt_cost=0.03/1000, completion_cost=0.06/1000)
+    # phi4 = RitsModel(engine='microsoft/phi-4', api_max_attempts=30, api_endpoint='chat', temperature=1.0, top_p=1.0, max_tokens=2400, num_samples=1, prompt_cost=0.03/1000, completion_cost=0.06/1000)
+    phi4 = HFModel(model_name='microsoft/Phi-4-reasoning-plus')
+    # phi4 = HFModel(model_name="simplescaling/s1.1-1.5B")
 
     # gpt4 = OpenAIModel(engine='gpt-4', api_max_attempts=30, api_endpoint='chat', temperature=1.0, top_p=1.0, max_tokens=2400, num_samples=1, prompt_cost=0.03/1000, completion_cost=0.06/1000)
     # gpt3516k = OpenAIModel(engine='gpt-3.5-turbo-16k', api_endpoint='chat', api_max_attempts=30, temperature=1.0, max_tokens=2400, num_samples=1, prompt_cost=0.003/1000, completion_cost=0.004/1000)
@@ -56,11 +60,12 @@ def main():
     ablations = [
         # {'prompt': 'regular', 'name': 'regular'},
         # {'prompt': 'cot', 'name': 'cot'},
-        # {'prompt': 'cot+', 'name': 'cot+'},
+        {'prompt': 'cot+', 'name': 'cot+', 'hint_before_question': False},
+        {'prompt': 'cot+', 'name': 'cot+ hint', 'hint_before_question': True},
         # {'prompt': 'cot+', 'name': 'cot+ 1-shot', 'self_consistency_n': 1, 'use_example': True},
         # {'prompt': 'cot+', 'name': 'cot+ s.c.', 'self_consistency_n': 3},
         # {'prompt': 'cot+', 'name': 'cot+ s.c. 1-shot', 'self_consistency_n': 3, 'use_example': True},
-        {'prompt': 'phi-4', 'name': 'Phi-4-reasoning-plus'}
+        # {'prompt': 'phi-4', 'name': 'Phi-4-reasoning-plus'}
     ]
 
     datasets_to_test = [
@@ -164,6 +169,7 @@ def main():
                         raw_answers = []
                         choices = "\n".join([f'{idx + 1} - {x}' for idx, x in enumerate(question["choices"])])
                         gold_answer = question["answer"] + d.get('answer_index_modifier', 1)
+                        qhash = question['intermediate_data'][0]['story_hash_id']
 
                         for scidx in range(self_consistency_n):
 
@@ -177,13 +183,13 @@ def main():
                             elif prompt_style == 'cot':
                                 prompt = f'{ex_str}{context}\n\n{question["question"]}\n\nPick one of the following choices:\n{choices}\n\nYou must pick one option. Explain your reasoning step by step before you answer. Finally, the last thing you generate should be "ANSWER: (your answer here, include the choice number)"'
                             elif prompt_style == 'cot+':
-                                if d.get("hint_before_question"):
+                                if a.get("hint_before_question"):
                                     prompt = f'{ex_str}{context}\n\n{d["hint"]}\n\n{question["question"]}\n\nPick one of the following choices:\n{choices}\n\nYou must pick one option. Explain your reasoning step by step before you answer. Finally, the last thing you generate should be "ANSWER: (your answer here, including the choice number)"'
                                 else:
                                     prompt = f'{ex_str}{context}\n\n{question["question"]}\n\nPick one of the following choices:\n{choices}\n\nYou must pick one option. {d["hint"]} Explain your reasoning step by step before you answer. Finally, the last thing you generate should be "ANSWER: (your answer here, including the choice number)"'
-                            elif prompt_style == 'phi-4':
-                                phi_prompt = "You are Phi, a language model trained by Microsoft to help users. Your role as an assistant involves thoroughly exploring questions through a systematic thinking process before providing the final precise and accurate solutions. This requires engaging in a comprehensive cycle of analysis, summarizing, exploration, reassessment, reflection, backtracing, and iteration to develop well-considered thinking process. Please structure your response into two main sections: Thought and Solution using the specified format: <think> {Thought section} </think> {Solution section}. In the Thought section, detail your reasoning process in steps. Each step should include detailed considerations such as analysing questions, summarizing relevant findings, brainstorming new ideas, verifying the accuracy of the current steps, refining any errors, and revisiting previous steps. In the Solution section, based on various attempts, explorations, and reflections from the Thought section, systematically present the final solution that you deem correct. The Solution section should be logical, accurate, and concise and detail necessary steps needed to reach the conclusion. Now, try to solve the following question through the above guidelines:"
-                                prompt = f'{phi_prompt }\n{ex_str}{context}\n\n{question["question"]}\n\nPick one of the following choices:\n{choices}\n\nYou must pick one option.'
+                            # elif prompt_style == 'phi-4':
+                            #     phi_prompt = "You are Phi, a language model trained by Microsoft to help users. Your role as an assistant involves thoroughly exploring questions through a systematic thinking process before providing the final precise and accurate solutions. This requires engaging in a comprehensive cycle of analysis, summarizing, exploration, reassessment, reflection, backtracing, and iteration to develop well-considered thinking process. Please structure your response into two main sections: Thought and Solution using the specified format: <think> {Thought section} </think> {Solution section}. In the Thought section, detail your reasoning process in steps. Each step should include detailed considerations such as analysing questions, summarizing relevant findings, brainstorming new ideas, verifying the accuracy of the current steps, refining any errors, and revisiting previous steps. In the Solution section, based on various attempts, explorations, and reflections from the Thought section, systematically present the final solution that you deem correct. The Solution section should be logical, accurate, and concise and detail necessary steps needed to reach the conclusion. Now, try to solve the following question through the above guidelines:"
+                            #     prompt = f'{phi_prompt }\n{ex_str}{context}\n\n{question["question"]}\n\nPick one of the following choices:\n{choices}\n\nYou must pick one option.'
                             else:
                                 if len(question["intermediate_trees"]) == 0 or d.get('skip_ablated'):
                                     continue
@@ -218,6 +224,7 @@ def main():
                                 raw = m.inference(prompt, system_prompt=d.get("system_prompt"))
                                 output = raw.choices[0].message.content
                             else:
+                                # Boaz - I am using the original system prompt. My model_info.get("system_prompt_template") is empty
                                 if d.get("system_prompt") and model_info.get("system_prompt_template"):
                                     prompt = model_info.get("system_prompt_template").replace("{system_prompt}", d.get('system_prompt')).replace("{prompt}", prompt)
                                 output = m.inference(prompt)
@@ -241,6 +248,7 @@ def main():
                                 answer_outs.append(str(gold_answer))
                                 raw_answers.append({
                                     'qidx': qidx,
+                                    'qhash': qhash,
                                     'prompt': prompt,
                                     'output': output,
                                     'model_parsed_answer': answer,
@@ -254,6 +262,7 @@ def main():
                                 answer_outs.append([str(x+1) for x in range(len(question["choices"])) if str(x+1) in answer][0])
                                 raw_answers.append({
                                     'qidx': qidx,
+                                    'qhash': qhash,
                                     'prompt': prompt,
                                     'output': output,
                                     'model_parsed_answer': answer,

@@ -1,7 +1,9 @@
 import sys
 from typing import List, Union, Tuple, Optional
 
+# from src.dataset_builder import format_output
 from src.logic_tree.tree import LogicNode, LogicNodeFactType
+from src.utils.model_utils import format_output
 from src.validators.validator import Validator
 from src.model import Model
 
@@ -65,7 +67,8 @@ class ModelValidator(Validator):
             early_prompt = f'{self.prompt}\n\nThe Deduction:\n{raw_output}\n\nWrite your answer in the following format:\nANSWER: (yes/no)'
             early_output = self.early_escape_model.inference(early_prompt)
             # early_output = early_output.choices[0]['message']['content']
-            early_output = early_output.choices[0].message.content
+            # early_output = early_output.choices[0].message.content
+            early_output = format_output(self.early_escape_model, early_output)
             early_answer = early_output.split('ANSWER:')[-1]
 
             if self.answer_for_validity.lower() in early_answer.lower():
@@ -74,7 +77,8 @@ class ModelValidator(Validator):
         prompt = f'{self.prompt}\n\nThe Deduction:\n{raw_output}\n\nWrite a short description of your reasoning then answer in the following format:\nANSWER: (yes/no)'
         output = self.model.inference(prompt)
         # output = output.choices[0]['message']['content']
-        output = output.choices[0].message.content
+        # output = output.choices[0].message.content
+        output = format_output(self.early_escape_model, output)
         answer = output.split('ANSWER:')[-1]
 
         if self.answer_for_validity.lower() in answer.lower():

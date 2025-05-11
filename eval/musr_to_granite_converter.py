@@ -58,7 +58,7 @@ def main():
         d_in = d_ins[0]
         if isinstance(list(), type(d_in)): d_in = d_in[0]
         if chat_format:
-            content = {"conversations":
+            content = {"messages":
                 [
                     {"role": "user", "content": d_in["prompt"]},
                     {
@@ -74,7 +74,9 @@ def main():
             }
 
         d_out = {
-            "problem_id": d_in["qidx"],  # str(uuid.uuid4()),
+            "id": str(uuid.uuid4()),
+            "qidx": d_in["qidx"],
+            "qhash": d_in["qhash"],
             "source": f'{model}_{dataset}_{prompt_type}',
             "solution": "",
             **content,

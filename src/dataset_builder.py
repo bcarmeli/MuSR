@@ -6,11 +6,13 @@ import random
 from tqdm import tqdm
 from functools import partial
 
+from src.utils.model_utils import format_output
+
 random.seed(0)
 
 from src.madlib.madlib import Madlib
 from src.logic_tree.tree import LogicNode, LogicTree, LogicNodeFactType
-from src.model import Model
+from src.model import Model, OpenAIModel, HFModel
 from src.validators import Validator, StructureValidator
 
 
@@ -402,8 +404,7 @@ class DatasetBuilder:
                     sys.exit(0)
 
                 raw = model.inference(prompt)
-                # output = raw.choices[0]['message']['content']
-                output = raw.choices[0].message.content
+                output = format_output(model, raw)
 
                 def parse_out(output):
                     facts_from_story = []
@@ -437,8 +438,8 @@ class DatasetBuilder:
                         raw = retry_model.inference(prompt)
 
                     # output = raw.choices[0]['message']['content']
-                    output = raw.choices[0].message.content
-
+                    # output = raw.choices[0].message.content
+                    output = format_output(model, raw)
                     facts_from_story, cs_knowledge = parse_out(output)
 
                 try:
@@ -474,7 +475,8 @@ class DatasetBuilder:
         else:
             raw = model.inference(prompt)
         # output = raw.choices[0]['message']['content']
-        output = raw.choices[0].message.content
+        # output = raw.choices[0].message.content
+        output = format_output(model, raw)
 
         return output, raw
 
@@ -564,9 +566,13 @@ class DatasetBuilder:
             all_valid = True
             while retry_idx <= max_retries_on_error:
                 all_valid = True
+                # time_stamp_a = time.time()
                 raw = model.inference(prompt)
+                # print(f"Inference call took {time.time()-time_stamp_a} ms")
+
                 # output = raw.choices[0]['message']['content']
-                output = raw.choices[0].message.content
+                # output = raw.choices[0].message.content
+                output = format_output(model, raw)
 
                 facts_from_story, cs_knowledge = parse_out(output)
 

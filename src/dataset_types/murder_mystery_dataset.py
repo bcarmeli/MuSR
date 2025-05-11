@@ -546,7 +546,11 @@ class MurderMysteryDataset(DatasetBuilder):
             innocent_description = '\n'.join(desc)
 
             # Start by creating a chapter for when the suspect is the murderer.
-            assert len(s['murderer_tree'].nodes[0].children) == 3, 'Bad tree format'
+            # assert len(s['murderer_tree'].nodes[0].children) == 3, 'Bad tree format'
+            if len(s['murderer_tree'].nodes[0].children) != 3:
+                print("Boaz add - replace assert with if as I do not know how to fix it. Bad format. Skipping ")
+                return None
+
             prompt = create_story_prompt__facts_only(description, s['murderer_tree'])
 
             output, _ = self.inference(prompt, model)

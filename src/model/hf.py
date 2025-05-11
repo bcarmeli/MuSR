@@ -48,10 +48,15 @@ class HFModel(Model):
         self.model = AutoModelForCausalLM.from_pretrained(self.model_name, device_map="auto", load_in_4bit=self.load_in_4bit)
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
 
+
     @cache.cached(data_ex=timedelta(days=30), no_data_ex=timedelta(hours=1), prepended_key_attr='model_name')
     def inference(self, prompt: str, *args, tokenizer_args=None, model_args=None, decode_args=None, **kwargs) -> Any:
         if model_args is None:
-            model_args = {'max_length': 2000}
+            # Boaz: these were taken from HF for Phi-4-reasoning+
+            # I got exception for max_length > 33,000. I changed it to 3000 for the story generation part
+            # model_args = {'max_length': 32768, 'temperature': 0.8, 'top_p': 0.95,'do_sample': True}
+            # After another exception I moved to provide max_new_tokens instead of max_length as suggested by ChatGPT
+            model_args = {'max_new_tokens': 30000, 'temperature': 0.8, 'top_p': 0.95,'do_sample': True}
         if tokenizer_args is None:
             tokenizer_args = {}
         if decode_args is None:
@@ -60,7 +65,14 @@ class HFModel(Model):
         if not self.model or not self.tokenizer:
             self.load_model()
 
-        model_inputs = self.tokenizer(prompt, return_tensors="pt", **tokenizer_args).to('cuda')
+        messages = [
+            {"role": "user", "content": prompt}
+        ]
+
+        chat = self.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        # print(prompt)
+
+        model_inputs = self.tokenizer(chat, return_tensors="pt", **tokenizer_args).to('cuda')
         output = self.model.generate(**model_inputs, **model_args)
         output = self.tokenizer.decode(output[0], skip_special_tokens=True, **decode_args)
         return output
