@@ -8,7 +8,7 @@ openai LLMs)
 
 NOTE: By default, datasets go into "{ROOT_FOLDER}/datasets/{dataset_name}.json"
 """
-
+from datetime import datetime
 import json
 import copy
 import sys
@@ -19,17 +19,15 @@ import random
 import pprint
 import re
 import traceback
-
-random.seed(0)
-
 from src import cache
-from src.model import OpenAIModel
+from src.model import OpenAIModel, RitsModel
 from src.logic_tree.tree import LogicTree, LogicNode, LogicNodeFactType
-from src.utils.paths import OUTPUT_FOLDER
+from src.utils.paths import OUTPUT_FOLDER, DOMAIN_SEED_FOLDER
 
 from src.dataset_types.object_placements_dataset import ObjectPlacementsDataset
 from functools import partial
 
+random.seed()
 
 def respect_article(item, people):
     if any([item.startswith(name) for name in people]):
@@ -96,34 +94,38 @@ def remove_prepended_numbers(strings):
     return [re.sub(r'^\d+\.\s*', '', s) for s in strings]
 
 def main():
+    redis_logical_db = int(sys.argv[1])
     # CACHE
-    cache.enable()
+    cache.enable(db=redis_logical_db)
 
     # PARAMS (if not with a comment, look at the Object Placements dataset class for more info.)
-
-    out_file = OUTPUT_FOLDER / 'custom_object_placements.json'
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    out_file = OUTPUT_FOLDER / f'custom_object_placements_{timestamp}_{redis_logical_db}.json'
     if out_file:
         out_file.parent.mkdir(exist_ok=True, parents=True)
 
     max_sequence_len = 3
     chance_to_see = 0.33
 
-    max_examples = 1
+    max_examples = 10
 
     tree_depth = 3
-    max_structure_completion_retries = 3
+    max_structure_completion_retries = 5
 
     verbose = True
     use_validators = True
 
     # CREATION LOGIC
     total_cost = 0
+    phi4_gpt35 = RitsModel(engine='microsoft/phi-4', api_endpoint='chat', api_max_attempts=30, temperature=1.0,
+                           max_tokens=1500, num_samples=1, prompt_cost=0.0015 / 1000, completion_cost=0.002 / 1000)
 
-    gpt35 = OpenAIModel(engine='gpt-3.5-turbo', api_endpoint='chat', api_max_attempts=30, temperature=1.0, max_tokens=1500, num_samples=1, prompt_cost=0.0015/1000, completion_cost=0.002/1000)
-    gpt16k35 = OpenAIModel(engine='gpt-3.5-turbo-16k', api_endpoint='chat', api_max_attempts=30, temperature=1.0, max_tokens=1500, num_samples=1, prompt_cost=0.003/1000, completion_cost=0.004/1000)
-    gpt4 = OpenAIModel(engine='gpt-4', api_max_attempts=30, api_endpoint='chat', temperature=1.0, top_p=1.0, max_tokens=2400, num_samples=1, prompt_cost=0.03/1000, completion_cost=0.06/1000)
-
-    model_to_use = gpt4
+    # gpt35 = OpenAIModel(engine='gpt-3.5-turbo', api_endpoint='chat', api_max_attempts=30, temperature=1.0, max_tokens=1500, num_samples=1, prompt_cost=0.0015/1000, completion_cost=0.002/1000)
+    # gpt16k35 = OpenAIModel(engine='gpt-3.5-turbo-16k', api_endpoint='chat', api_max_attempts=30, temperature=1.0, max_tokens=1500, num_samples=1, prompt_cost=0.003/1000, completion_cost=0.004/1000)
+    # gpt4 = OpenAIModel(engine='gpt-4', api_max_attempts=30, api_endpoint='chat', temperature=1.0, top_p=1.0, max_tokens=2400, num_samples=1, prompt_cost=0.03/1000, completion_cost=0.06/1000)
+    phi4_16k35 = phi4_gpt35
+    phi4_gpt4 = phi4_gpt35
+    model_to_use = phi4_gpt4
 
     dataset = []
 
@@ -134,6 +136,7 @@ def main():
     max_idx = int(max_examples * 10)
 
     while __idx < max_examples and raw_idx < max_idx:
+        story_start_time = datetime.now()
         print(f"STORY: {__idx+1}")
 
         raw_idx += 1
@@ -157,27 +160,31 @@ def main():
         # We also ask the model to produce the "moves" (who moved what to where) in one go.
         # This forces the model to create a "narrative" about why things are happening before we make the actual story.
         prompt = f'''
-You will build out an outline of a dramatic story given a short description of the scenario.  To do this, we are going to create three characters each with their own roles in the story and motivations.  
-
+You will build out an outline of a dramatic story given a short description of the scenario.  
+To do this, we are going to create three characters each with their own roles in the story and motivations.  
 We will then set the scene.  We will determine what the three characters doing together (the goal of the story).
-
-Then we will create a list of three "moves". A "move" involves one character moving an item from one location to a new location.  The items that are being moved should be smaller and tangible where as the locations should be places all the items could fit into.   For example, a shelf may be a location and an item may be a bag of coffee, this works out because a shelf can reasonably hold a bag of coffee.
-
-For each of the three moves, we will say why someone is doing this and how it relates to the story.  Most importantly, the justification for doing something should not depend on other people in the story -- we want people to be doing their own activities and moving things around so we can later ask questions about the story and the characters observations in it for the reader.
+Then we will create a list of three "moves". A "move" involves one character moving an item from one location to a new location.
+All three "moves" should involve exactly two "items".
+The items that are being moved should be smaller and tangible where as the locations should be places all the items could fit into.
+For example, a shelf may be a location and an item may be a bag of coffee, this works out because a shelf can reasonably hold a bag of coffee.
+For each of the three moves, we will say why someone is doing this and how it relates to the story.
+Most importantly, the justification for doing something should not depend on other people in the story -- we want people to be doing their own activities and moving things around so we can later ask questions about the story and the characters observations in it for the reader.
 
 Rules:
 1) When describing characters make sure you are using real names and their roles fit given the description.
-2) The motivation and location of the story should make sense given the characters and their roles.
-3) The story outline should involve all three people working on something similar with one major plot point.  For example, making coffee for a customer.
-4) The moves should make sense given the story thus far, the characters and their roles, and the location.  For example, a customer should not be moving milks around in a cafe because they don't work there.
-5) For the moves, you must use tangible small items, do not use ideas "a performance" for example, do not use large items like "a tv".  Instead use small, easily moved items like "Iphone", "Notebook", "Laptop" etc.
-6) The locations you pick must be able to house the items you made.  So if you said "Golf club" was an item, all locations must be able to fit a golf club in them, you would not say "coat pocket" for example.
-7) Your justifications for why someone moved an item should involve the character moving the object only! You can include details about the story and location, but it should never involve another person (as this defeats our Question and Answer test for the reader later on).
-8) Only two items may be introduced into the story, three people may be introduced, and four locations.  One person may move an item twice, but no more.
-9) Locations should be general, for example say "from his desk to her shelf" do not say things like "from Carl's desk to Sarah's shelf" as this makes it difficult for us to parse out the locations from your output.
-10) Follow the moves template exactly so our python program can parse it. The format is: "[persons name] moves the [item name] from the [from_location] to the [destination_location]."  Do not diverge from this format.
+2) When describing moves, make sure all three moves relates to exactly two items. That is. one item is moved twice. 
+3) The motivation and location of the story should make sense given the characters and their roles.
+4) The story outline should involve all three people working on something similar with one major plot point. For example, making coffee for a customer.
+5) The moves should make sense given the story thus far, the characters and their roles, and the location.  For example, a customer should not be moving milks around in a cafe because they don't work there.
+6) For the moves, you must use tangible small items, do not use ideas "a performance" for example, do not use large items like "a tv".  Instead use small, easily moved items like "Iphone", "Notebook", "Laptop" etc.
+7) The locations you pick must be able to house the items you made.  So if you said "Golf club" was an item, all locations must be able to fit a golf club in them, you would not say "coat pocket" for example.
+8) Your justifications for why someone moved an item should involve the character moving the object only! You can include details about the story and location, but it should never involve another person (as this defeats our Question and Answer test for the reader later on).
+9) Only two items may be introduced into the story, three people may be introduced, and four locations.  One person may move an item twice, but no more.
+10) Locations should be general, for example say "from his desk to her shelf" do not say things like "from Carl's desk to Sarah's shelf" as this makes it difficult for us to parse out the locations from your output.
+11) Follow the moves template exactly so our python program can parse it. The format is: "[persons name] moves the [item name] from the [from_location] to the [destination_location]."  Do not diverge from this format.
 
-You cannot use any other items name in the justification for the move except for the item moving.  For example, if the items are "cards and apple", when justifying the move for the "cards" you cannot say "apple" in the justification.
+You cannot use any other items name in the justification for the move except for the item moving.
+For example, if the items are "cards and apple", when justifying the move for the "cards" you cannot say "apple" in the justification.
 There must always be two unique items.
 
 Here's an example
@@ -208,24 +215,24 @@ Moves:
 
 Move 1 - Luis moves the almond milk from the fridge to the back shelves.
 Mover: Luis
-Item: almond milk
+Item_1: almond milk
 From: fridge
 To: back shelves
-Reason - Luis is cleaning the fridge so everyone can work more efficiently.
+justification: Luis is cleaning the fridge so everyone can work more efficiently.
 
 Move 2 - Sarah moves the coffee bag from the back shelves to the front counter.
 Mover: Sarah
-Item: coffee bag
+Item_2: coffee bag
 From: back shelves
 To: front counter
-Reason - Sarah ran out of beans for making coffee and had to go back to get the spare.
+justification: Sarah ran out of beans for making coffee and had to go back to get the spare.
 
 Move 3 - Sarah moves the almond milk from the back shelves to the fridge.
 Mover: Sarah
-Item: almond milk
+Item_1: almond milk
 From: bach shelves
 To: fridge
-Reason - She noticed the milk was left out for too long and put it back before it spoiled.
+justification: She noticed the milk was left out for too long and put it back before it spoiled.
 
 Your turn!
 
@@ -254,37 +261,87 @@ Output:
         world_state = []
 
         try:
-            lines = output.split('\n\n')
+            # lines = output.split('\n\n')
+            seperator = "###" if "###" in output else "---" if "---" in output else "\n\n"
+            all_parts = output.split(seperator)
+            parts = {"Characters": [],"Outline": "",  "Moves": []}
+            for part in all_parts:
+                if "Name:" in part and "Role:" in part and "Motivation:" in part:
+                    parts["Characters"].append(part)
+                    continue
+                if "story outline" in part.lower():
+                    parts["Outline"] = part
+                    continue
+                if "Mover" in part and "Item" in part:
+                    parts["Moves"].append(part)
 
-            for c in lines[0:3]:
-                info = c.split('\n')
-                people_data.append({
-                    'name': info[1].replace('Name: ', ''),
-                    'role': info[2].replace('Role: ', ''),
-                    'motivation': info[3].replace('Motivation: ', '')
-                })
-                people.append(info[1].replace('Name: ', ''),)
 
-            story_desc = lines[3].replace('Story outline:\n','').replace('Story Outline:\n','')
+            # for c in lines[0:3]:
+            if len(parts["Characters"]) == 1:
+                if seperator == "\n\n":
+                    print("ERROR in parsing Characters. Only one paragraph found")
+                    continue
+                else:
+                    parts["Characters"] = parts["Characters"][0].split("\n\n")
+            if len(parts["Moves"]) == 1:
+                if seperator == "\n\n":
+                    print("ERROR in parsing Moves. Only one paragraph found")
+                    continue
+                else:
+                    parts["Moves"] = parts["Moves"][0].split("\n\n")
 
-            for move_info in lines[5:]:
-                m = move_info.split('\n')
-                """Move 3 - Sarah moves the almond milk from the back shelves to the fridge.
-Mover: Sarah
-Item: almond milk
-From: bach shelves
-To: fridge
-Reason - She noticed the milk was left out for too long and put it back before it spoiled.
-"""
-                move_data = {
-                    'mover': m[1].replace('Mover: ', ''),
-                    'item': m[2].replace('Item: ', ''),
-                    'from': m[3].replace('From: ', '').replace('his', f'{m[1].replace("Mover: ", "")}\'s').replace('her', f'{m[1].replace("Mover: ", "")}\'s'),
-                    'to': m[4].replace('To: ', '').replace('his', f'{m[1].replace("Mover: ", "")}\'s').replace('her', f'{m[1].replace("Mover: ", "")}\'s'),
-                    'justification': m[5].replace('Reason - ', '')
-                }
+            for character in parts["Characters"]:
+                info = character.split('\n')
+                character_data = {'name': None, 'role': None, 'motivation': None}
+                for line in info:
+                    for info_key in list(character_data.keys()):
+                        if info_key in line.lower():
+                            character_data[info_key] = re.sub(rf'(?i)^[^\w]*{info_key}[^\w]*', '', line.strip(), flags=re.IGNORECASE)
+                            break
+                if None not in  character_data.values():
+                    people_data.append(character_data)
+                    people.append(character_data['name'])
+                    # people_data.append({
+                    #     'name': info[1].replace('Name: ', ''),
+                    #     'role': info[2].replace('Role: ', ''),
+                    #     'motivation': info[3].replace('Motivation: ', '')
+                    # })
+                # people.append(info[1].replace('Name: ', ''),)
 
-                moves.append(move_data)
+            # story_desc = lines[3].replace('Story outline:\n','').replace('Story Outline:\n','')
+            story_desc = parts["Outline"].replace('Story outline:\n', '').replace('Story Outline:\n', '')
+
+            # for move_info in lines[5:]:
+            for move_info in parts["Moves"]:
+                info = move_info.split('\n')
+                move_data = {'mover': None, 'item': None, 'from': None, 'to': None, 'justification': None,}
+                for line in info:
+                    for info_key in list(move_data.keys()):
+                        key_pattern = rf'(?i)^[^\w]*{info_key}[^:]*:\s*'
+                        # if info_key in line.lower():
+                        if re.search(key_pattern, line, re.IGNORECASE):
+                            move_data[info_key] = re.sub(rf'(?i)^[^\w]*{info_key}[^:]*:[^\w]*', '', line.strip(),
+                                                              flags=re.IGNORECASE)
+                            break
+                if None not in move_data.values():
+                    move_data['from'] = move_data['from'].replace('his', move_data['mover']).replace('her',move_data['mover'])
+                    move_data['to'] = move_data['to'].replace('his', move_data['mover']).replace('her',move_data['mover'])
+                    moves.append(move_data)
+                # if len(m) < 6:
+                #     # if "Name:" in c and "Role:" in c and "Motivation:" in c:
+                #     # print(f"Boaz - bad generation. Move info need to have 6 rows\n"
+                #     #       f"{'@@'.join(m)}")
+                #     continue
+                #
+                # move_data = {
+                #     'mover': m[1].replace('Mover: ', ''),
+                #     'item': m[2].replace('Item: ', ''),
+                #     'from': m[3].replace('From: ', '').replace('his', f'{m[1].replace("Mover: ", "")}\'s').replace('her', f'{m[1].replace("Mover: ", "")}\'s'),
+                #     'to': m[4].replace('To: ', '').replace('his', f'{m[1].replace("Mover: ", "")}\'s').replace('her', f'{m[1].replace("Mover: ", "")}\'s'),
+                #     'justification': m[5].replace('Reason - ', '')
+                # }
+
+                # moves.append(move_data)
 
                 locations.extend([move_data['from'], move_data['to']])
                 items.append(move_data['item'])
@@ -302,9 +359,13 @@ Reason - She noticed the milk was left out for too long and put it back before i
             items_str = '\n'.join([f'- {x}' for x in items])
 
             # Gotta have 2 items always.
-            if len(items) != 2:
-                print("ERROR: WRONG ITEM COUNT")
+            if len(people) != 3:
+                print(f"ERROR: WRONG PEOPLE COUNT: {len(people)}")
                 continue
+
+            if len(items) != 2:
+                print(f"ERROR: WRONG ITEM COUNT: {items}")
+                # continue
 
             # You cannot move an item because of another item (it makes our stuff downstream harder).
             if any([z.lower() in y['justification'].lower() and x.lower() != y['item'].lower() for x in items for y in moves for z in x.split(' ')]):
@@ -325,7 +386,7 @@ Reason - She noticed the milk was left out for too long and put it back before i
                 retry = False
                 for gidx, (gm, e) in enumerate(zip(move_strs, events[1:])):
                     move = e[0]
-                    if move.lower() != gm.lower():
+                    if  gm.lower() != move.lower():
                         retry = True
                         break
                 if retry:
@@ -340,14 +401,14 @@ Reason - She noticed the milk was left out for too long and put it back before i
             )
         except Exception as e:
             # If for any reason something fails, we will just retry the whole loop.
-            print("ERROR")
-            print(e)
+            print("ERROR: EXCEPTION WHILE PARSING STORY INFO")
+            print(f"Exception is {e}")
             traceback.print_exc()
             print(flush=True)
             time.sleep(1)
             continue
 
-        print(f"STORY: {__idx}")
+        print(f"STORY ITEMS GENERATED: {__idx}")
 
         completion_description = f'''
 {story_desc}
@@ -693,13 +754,13 @@ Output:
 
         story = story_so_far
 
-        cost = gpt35.total_cost + gpt16k35.total_cost + gpt4.total_cost
+        cost = phi4_gpt35.total_cost + phi4_16k35.total_cost + phi4_gpt4.total_cost
         total_cost += cost
         print(
             f"EXAMPLE COST: {cost:.2f} | TOTAL COST: {total_cost:.2f}")
-        gpt35.total_cost = 0.0
-        gpt16k35.total_cost = 0.0
-        gpt4.total_cost = 0.0
+        phi4_gpt35.total_cost = 0.0
+        phi4_16k35.total_cost = 0.0
+        phi4_gpt4.total_cost = 0.0
 
         if verbose:
             print("FINISHED")
@@ -718,10 +779,11 @@ Output:
             creator.create_dataset_question_object(
                 context=story, questions=question, answers=answers,
                 intermediate_trees=[[tree]] * len(question), choices=[locations] * len(question),
-                intermediate_data=[[{'events': events, 'beliefs': beliefs, 'actual_locs': actual_locs}]] * len(question)
+                intermediate_data=[[{'events': events, 'beliefs': beliefs, 'actual_locs': actual_locs, 'story_hash_id': hash(story)}]] * len(question)
             )
         )
 
+        print(f"GENERATION TIME for STORY {__idx}: {(datetime.now() - story_start_time) * 1000} secs")
         __idx += 1
 
 

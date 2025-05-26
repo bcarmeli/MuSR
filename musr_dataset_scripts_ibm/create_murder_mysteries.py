@@ -138,7 +138,7 @@ def main():
     use_validators = True
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    out_file = OUTPUT_FOLDER / f'custom_murder_mysteries_{timestamp}_{redis_logical_db}.json'
+    out_file = OUTPUT_FOLDER / "murder_mysteries" / f'custom_murder_mysteries_{timestamp}_{redis_logical_db}.json'
     if out_file:
         out_file.parent.mkdir(exist_ok=True, parents=True)
 

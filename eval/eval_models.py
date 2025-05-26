@@ -1,3 +1,4 @@
+import ast
 import json
 import math
 import sys
@@ -20,7 +21,7 @@ from src import cache
 from src.model import OpenAIModel, HFModel
 from src.logic_tree.tree import LogicTree, LogicNode, LogicNodeFactType
 from src.madlib.madlib import Madlib
-from src.utils.paths import OUTPUT_FOLDER, DISTILL_FOLDER
+# from src.utils.paths import OUTPUT_FOLDER, DISTILL_FOLDER
 
 # from eval.icl.murder_mystery_solved_ex import murder_mystery_solved_ex
 # from eval.icl.object_placements_solved_ex import object_placements_solved_ex
@@ -29,59 +30,61 @@ from src.utils.paths import OUTPUT_FOLDER, DISTILL_FOLDER
 
 def main():
     """
-    This script will run a bunch of models over the datasets created in MuSR.
-    Furthermore, it can test different prompting strategies (at least the ones mentioned in the paper).
+    This script will run a bunch of models over the datasets created in MuSR.  Furthermore, it can test different
+    prompting strategies (at least the ones mentioned in the paper).
 
     There are also a ton of parameters you can set to control the eval and visualize intermediate answers etc.
     """
     input_file_name = sys.argv[1]
     redis_logical_db = int(sys.argv[2])
-    dataset_type = sys.argv[3]
-
+    model_to_test = sys.argv[3]
     # CACHE
     cache.enable(db=redis_logical_db)
 
-    DATASETS_FOLDER = OUTPUT_FOLDER / dataset_type
+    DATASETS_FOLDER = Path("evaluation/test_data") # OUTPUT_FOLDER
+    DISTILL_FOLDER = Path(f"evaluation/test_results/{model_to_test}/")
 
-    phi4 = RitsModel(engine='microsoft/phi-4', api_endpoint='chat', api_max_attempts=30, temperature=1.0, max_tokens=1500, num_samples=1, prompt_cost=0.0015/1000, completion_cost=0.002/1000)
-    # phi4_16k35 = RitsModel(engine='microsoft/phi-4', api_endpoint='chat', api_max_attempts=30, temperature=1.0, max_tokens=2400, num_samples=1, prompt_cost=0.003/1000, completion_cost=0.004/1000)
-    # phi4 = RitsModel(engine='ibm-granite/granite-3.3-8b-instruct', api_max_attempts=30, api_endpoint='chat', temperature=1.0, top_p=1.0, max_tokens=2400, num_samples=1, prompt_cost=0.03/1000, completion_cost=0.06/1000)
-    # phi4 = HFModel(model_name='microsoft/Phi-4-reasoning-plus')
+    models_to_test = {"granite_instruct_baseline": "ibm-granite/granite-3.3-8b-instruct",
+    "granite_base_replay_buffer_baseline": "bm-granite/granite-3.3-8b-instruct",
+    "granite_instruct_trained": "/dccstor/knewedge/boazc/workarea//boazc_org/fms-dgt/output/all_puzzle_datasets/v1/2025_05_14/06_experiments/train_instruct_no_replay_buffer_4164_4_gpus_32768_len_5_epoch/checkpoints/merged-650/",
+    "granite_base_trained": "/dccstor/knewedge/boazc/workarea//boazc_org/fms-dgt/output/all_puzzle_datasets/v1/2025_05_14/06_experiments/train_9163_4_gpus_32000_len_5_epoch/checkpoints/merged-1430"
+     }
 
-
-    # phi4 = HFModel(model_name="simplescaling/s1.1-1.5B")
+    # phi4_gpt35 = RitsModel(engine='microsoft/phi-4', api_endpoint='chat', api_max_attempts=30, temperature=1.0, max_tokens=1500, num_samples=1, prompt_cost=0.0015/1000, completion_cost=0.002/1000)
+    # phi4 = RitsModel(engine='microsoft/phi-4', api_endpoint='chat', api_max_attempts=30, temperature=1.0, max_tokens=2400, num_samples=1, prompt_cost=0.003/1000, completion_cost=0.004/1000)
+    granite = RitsModel(engine='ibm-granite/granite-3.3-8b-instruct', api_max_attempts=30, api_endpoint='chat', temperature=1.0, top_p=1.0, max_tokens=2400, num_samples=1, prompt_cost=0.03/1000, completion_cost=0.06/1000)
+    # phi4_reasoning = HFModel(model_name='microsoft/Phi-4-reasoning-plus')
+    # granite = HFModel(model_name=models_to_test[model_to_test], tokenizer_name="ibm-granite/granite-3.3-8b-instruct")
+    # s1 = HFModel(model_name="simplescaling/s1.1-1.5B")
 
     # gpt4 = OpenAIModel(engine='gpt-4', api_max_attempts=30, api_endpoint='chat', temperature=1.0, top_p=1.0, max_tokens=2400, num_samples=1, prompt_cost=0.03/1000, completion_cost=0.06/1000)
     # gpt3516k = OpenAIModel(engine='gpt-3.5-turbo-16k', api_endpoint='chat', api_max_attempts=30, temperature=1.0, max_tokens=2400, num_samples=1, prompt_cost=0.003/1000, completion_cost=0.004/1000)
     # gpt35 = OpenAIModel(engine='gpt-3.5-turbo', api_endpoint='chat', api_max_attempts=30, temperature=1.0, max_tokens=700, num_samples=1, prompt_cost=0.0015/1000, completion_cost=0.002/1000)
 
     # NOTE: change the filenames as needed! (to point at whatever thing you want to test.  It is important to keep the system prompt/hint/etc. all the same for each specific type of domain though).
-    # murder_mysteries = {'name': 'murder mysteries', 'file_name': input_file_name, 'ex': murder_mystery_solved_ex, 'system_prompt': 'You are a helpful assistant that will answer the questions given by the user.', 'hint': 'Before selecting a choice, explain your reasoning step by step. The murderer needs to have a means (access to weapon), motive (reason to kill the victim), and opportunity (access to crime scene) in order to have killed the victim. Innocent suspects may have two of these proven, but not all three. An innocent suspect may be suspicious for some other reason, but they will not have all of motive, means, and opportunity established.\n\nIf you believe that both suspects have motive, means, and opportunity, you should make an educated guess pick the one for whom these are best established. If you believe that neither suspect has all three established, then choose the suspect where these are most clearly established.'}
-    object_placements = {'name': 'object placements', 'file_name': input_file_name, 'ex': object_placements_solved_ex, 'skip_ablated': True, 'system_prompt': 'You are a helpful assistant that will answer the questions given by the user.', 'ablation_depth_modifier': 2, 'hint': 'Based on this story, we want to identify where someone believes that a certain object is at the end of the story. In order to do that, you need to read the story and keep track of where they think the object is at each point. When an object is moved, the person may observe its new location if they saw it move.\n\nTo see where an object ends up, they must be able to see the location that it moves to and not be too distracted by what they are doing. If they do not observe the object moving, then they will still believe it to be in the last location where they observed it.', 'hint_before_question': True}
+    murder_mysteries = {'name': 'murder mysteries', 'file_name': input_file_name, 'ex': murder_mystery_solved_ex, 'system_prompt': 'You are a helpful assistant that will answer the questions given by the user.', 'hint': 'Before selecting a choice, explain your reasoning step by step. The murderer needs to have a means (access to weapon), motive (reason to kill the victim), and opportunity (access to crime scene) in order to have killed the victim. Innocent suspects may have two of these proven, but not all three. An innocent suspect may be suspicious for some other reason, but they will not have all of motive, means, and opportunity established.\n\nIf you believe that both suspects have motive, means, and opportunity, you should make an educated guess pick the one for whom these are best established. If you believe that neither suspect has all three established, then choose the suspect where these are most clearly established.'}
+    # object_placements = {'name': 'object placements', 'file_name': 'object_placements.json', 'ex': object_placements_solved_ex, 'skip_ablated': True, 'system_prompt': 'You are a helpful assistant that will answer the questions given by the user.', 'ablation_depth_modifier': 2, 'hint': 'Based on this story, we want to identify where someone believes that a certain object is at the end of the story. In order to do that, you need to read the story and keep track of where they think the object is at each point. When an object is moved, the person may observe its new location if they saw it move.\n\nTo see where an object ends up, they must be able to see the location that it moves to and not be too distracted by what they are doing. If they do not observe the object moving, then they will still believe it to be in the last location where they observed it.', 'hint_before_question': True}
     # team_allocation = {'name': 'team allocation', 'file_name': 'team_allocation.json', 'ex': team_allocation_solved_ex, 'system_prompt': 'You are a helpful assistant that will answer the questions given by the user.', 'hint': 'The story should allow you to determine how good each person is at a skill. Roughly, each person is either great, acceptable, or bad at a task. We want to find an optimal assignment of people to tasks that uses their skills as well as possible. In addition, one task will have to have two people assigned to it. The effectiveness of their teamwork (great team, acceptable team, or bad team) also impacts the overall quality of the assignment.\n\nWhen two people need to work on a task and one is bad at it, they don’t necessarily benefit from the other person being good, unless they work well together.\n\nWith different strengths, weaknesses, and interpersonal dynamics at play, you should allocate your team to find the single assignment to ensure that the tasks overall are completed as effectively as possible.\n\n'}
 
     ablations = [
         # {'prompt': 'regular', 'name': 'regular'},
         # {'prompt': 'cot', 'name': 'cot'},
-        
         {'prompt': 'cot+', 'name': 'cot+', 'hint_before_question': False},
-        # {'prompt': 'cot+', 'name': 'cot+ hint', 'hint_before_question': True},
-        
-        # {'prompt': 'cot+', 'name': 'cot+ 1-shot', 'self_consistency_n': 1, 'use_example': True},
-        # {'prompt': 'cot+', 'name': 'cot+ s.c.', 'self_consistency_n': 3},
-        # {'prompt': 'cot+', 'name': 'cot+ s.c. 1-shot', 'self_consistency_n': 3, 'use_example': True},
-        # {'prompt': 'phi-4', 'name': 'Phi-4-reasoning-plus'}
+        {'prompt': 'cot+', 'name': 'cot+ hint', 'hint_before_question': True},
+        {'prompt': 'cot+', 'name': 'cot+ 1-shot', 'self_consistency_n': 1, 'use_example': True},
+        {'prompt': 'cot+', 'name': 'cot+ s.c.', 'self_consistency_n': 3},
+        {'prompt': 'cot+', 'name': 'cot+ s.c. 1-shot', 'self_consistency_n': 3, 'use_example': True},
     ]
 
     datasets_to_test = [
-       # murder_mysteries,
-       object_placements,
+       murder_mysteries,
+       # object_placements,
        # team_allocation
     ]
 
     models_to_test = [
-        {'model': phi4},
-        # {'model': gpt4},
+        {'model': granite},
+        # {'model': phi4},
         # {'model': gpt3516k},
         # {'model': gpt35},
         # {'model': HFModel('meta-llama/Llama-2-7b-hf', load_in_4bit=True), 'system_prompt_template': "{system_prompt}\n\n{prompt}"},
@@ -93,14 +96,14 @@ def main():
         # {'model': HFModel('lmsys/vicuna-33b-v1.3', load_in_4bit=True), 'system_prompt_template': "{system_prompt}\n\nUSER: {prompt}\nASSISTANT: "},
     ]
 
-    sample_size = 2 # None  # How many examples to test on
+    sample_size = None  # How many examples to test on
     offset = 0 # Offset the dataset
     exclude_contrastive_examples = True  # For murder mysteries, exclude stories that are the same but with the murderer suspect flipped (will only include 1 story per)
     reverse_contrastive_sample = False  # Flip which mystery you are looking at that's unique
     verbose = False  # Print stuff out
     human_verbose = False  # Useful for annotation stuff (just removes COT lingo)
     log_gold_answer = True  # Print the gold answer
-    log_tree = True # Print the tree for the answer
+    log_tree = False # Print the tree for the answer
     skip_inference = False # Don't actually call the model
     progress_bar = True # Show a progress bar
     randomize = True # Shuffle stuff.
@@ -141,7 +144,14 @@ def main():
                     dataset = []
                     hashes_done = []
                     for _d in _dataset:
-                        if len(_d['questions']) == 0: continue # Boaz - bad data format. Need to resolve during generation
+                        if 'context' not in _d.keys() and 'narrative' in _d.keys(): _d['context'] = _d['narrative']
+                        if 'questions' not in _d.keys() and 'question' in _d.keys():
+                            _d['questions'] = [{'question': _d['question'],
+                                                'choices': ast.literal_eval(_d['choices']),
+                                                'answer': _d['answer_index'],
+                                                'answer_choice': _d['answer_choice'],
+                                                'intermediate_data': None}]
+                        # exclude_contrastive_examples = False
                         if exclude_contrastive_examples and _d['questions'][0].get('intermediate_data') and len(
                                 _d['questions'][0].get('intermediate_data')) > 0 and \
                                 _d['questions'][0]['intermediate_data'][0].get('story_hash_id'):
@@ -174,8 +184,8 @@ def main():
                         answer_outs = []
                         raw_answers = []
                         choices = "\n".join([f'{idx + 1} - {x}' for idx, x in enumerate(question["choices"])])
-                        gold_answer = question["answer"] + d.get('answer_index_modifier', 1)
-                        qhash = question['intermediate_data'][0]['story_hash_id'] if 'story_hash_id' in question['intermediate_data'][0].keys() else hash(context)
+                        gold_answer = question["answer"] + d.get('answer_index_modifier', 0)
+                        qhash = 0 # question['intermediate_data'][0]['story_hash_id']
 
                         for scidx in range(self_consistency_n):
 
@@ -216,7 +226,7 @@ def main():
                                 else:
                                     print(prompt)
                             if log_gold_answer:
-                                print(gold_answer)
+                                print(f"Gold answer is {gold_answer}")
                             if log_tree:
                                 for i in question['intermediate_trees']:
                                     print(LogicTree.from_json(i).print_for_gpt(pad_space=1, pad_char='> '))
@@ -258,8 +268,8 @@ def main():
                                     'prompt': prompt,
                                     'output': output,
                                     'model_parsed_answer': answer,
-                                    'trees': question['intermediate_trees'],
-                                    'data': question['intermediate_data'],
+                                    # 'trees': question['intermediate_trees'],
+                                    # 'data': question['intermediate_data'],
                                     'randomly_selected': randomly_selected,
                                     'gold_answer': gold_answer,
                                     'correct': True
@@ -272,8 +282,8 @@ def main():
                                     'prompt': prompt,
                                     'output': output,
                                     'model_parsed_answer': answer,
-                                    'trees': question['intermediate_trees'],
-                                    'data': question['intermediate_data'],
+                                    # 'trees': question['intermediate_trees'],
+                                    # 'data': question['intermediate_data'],
                                     'randomly_selected': randomly_selected,
                                     'gold_answer': gold_answer,
                                     'correct': False
@@ -318,7 +328,7 @@ def main():
 
                 print(f'RUNNING | {model_name} | {d["name"]} | {ablation_name} | {correct} / {total} | {(correct / max(1,total))*100:.1f}', flush=True)
 
-                out_file = DISTILL_FOLDER/ dataset_type / d.get("file_name", d.get("name", None))
+                out_file = f'{DISTILL_FOLDER}/{d.get("file_name", d.get("name", None))}'
                 if out_file:
                     with open(out_file, "w") as f:
                         json.dump(run_data, f, indent=2)
