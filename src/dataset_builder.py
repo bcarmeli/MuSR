@@ -566,9 +566,9 @@ class DatasetBuilder:
             all_valid = True
             while retry_idx <= max_retries_on_error:
                 all_valid = True
-                # time_stamp_a = time.time()
+                time_stamp_a = time.time()
                 raw = model.inference(prompt)
-                # print(f"Inference call took {time.time()-time_stamp_a} ms")
+                print(f"Inference call took {time.time()-time_stamp_a} ms")
 
                 # output = raw.choices[0]['message']['content']
                 # output = raw.choices[0].message.content

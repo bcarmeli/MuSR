@@ -4,6 +4,8 @@ from functools import partial
 import random
 from copy import deepcopy
 
+from src.model import Model
+
 random.seed(0)
 
 from src.madlib.madlib import Madlib
@@ -253,7 +255,7 @@ class ObjectPlacementsDataset(DatasetBuilder):
 
     def create_event_trees(
             self,
-            model: OpenAIModel,
+            model: Model, # OpenAIModel,
             event_structure: List[Dict[str, Union[str, List[str]]]],
             items: List[str],
             locations: List[str],
@@ -269,7 +271,7 @@ class ObjectPlacementsDataset(DatasetBuilder):
             max_retries_on_error: int = 1,
             progress_bar: bool = False,
             test_complete_structure_prompt: bool = False,
-            retry_model: OpenAIModel = None,
+            retry_model: Model = None,
             use_complex_facts: bool = True,
             use_validators: bool = False
     ):

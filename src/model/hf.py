@@ -28,6 +28,7 @@ class HFModel(Model):
             model_name: str,
             *args,
             load_in_4bit: bool = False,
+            tokenizer_name: str = None
     ):
         """
         :param model_name: Huggingface model name
@@ -36,6 +37,7 @@ class HFModel(Model):
         """
 
         self.model_name = model_name
+        self.tokenizer_name = tokenizer_name
         self.load_in_4bit = load_in_4bit
 
         self.model_args = args
@@ -46,7 +48,7 @@ class HFModel(Model):
 
     def load_model(self):
         self.model = AutoModelForCausalLM.from_pretrained(self.model_name, device_map="auto", load_in_4bit=self.load_in_4bit)
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name if self.tokenizer_name is None else self.tokenizer_name)
 
 
     @cache.cached(data_ex=timedelta(days=30), no_data_ex=timedelta(hours=1), prepended_key_attr='model_name')
@@ -69,10 +71,13 @@ class HFModel(Model):
             {"role": "user", "content": prompt}
         ]
 
-        chat = self.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        # print(prompt)
+        chat = self.tokenizer.apply_chat_template(messages, tokenize=False, thinking=True, add_generation_prompt=True)
+        # print(chat)
 
         model_inputs = self.tokenizer(chat, return_tensors="pt", **tokenizer_args).to('cuda')
+        input_len = model_inputs['input_ids'].shape[-1]
         output = self.model.generate(**model_inputs, **model_args)
-        output = self.tokenizer.decode(output[0], skip_special_tokens=True, **decode_args)
+        # Slice the assistant response only (after the prompt)
+        generated_tokens = output[0][input_len:]
+        output = self.tokenizer.decode(generated_tokens, skip_special_tokens=False, **decode_args)
         return output

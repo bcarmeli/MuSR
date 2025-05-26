@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 import itertools
 import time
+
+import httpx
 import openai
 
 from datetime import timedelta
@@ -98,11 +100,11 @@ class RitsModel(Model):
         if not openai.api_key:
             openai.api_key = os.getenv("RITS_API_KEY")
 
-
+        print(f"At RitsModele engine is {engine}")
         if engine == "mistralai/mixtral-8x22B-instruct-v0.1":
             self.base_url = 'https://inference-3scale-apicast-production.apps.rits.fmaas.res.ibm.com/mixtral-8x22b-instruct-v01/v1'
-        elif engine in ["ibm-granite/granite-3.0-8b-instruct"]:
-            self.base_url = 'https://inference-3scale-apicast-production.apps.rits.fmaas.res.ibm.com/granite-3-0-8b-instruct/v1'
+        elif engine == "ibm-granite/granite-3.3-8b-instruct":
+            self.base_url = 'https://inference-3scale-apicast-production.apps.rits.fmaas.res.ibm.com/granite-3-3-8b-instruct/v1'
         elif engine in ["meta-llama/llama-3-1-70b-instruct"]:
             self.base_url = 'https://inference-3scale-apicast-production.apps.rits.fmaas.res.ibm.com/llama-3-1-70b-instruct/v1'
         elif engine == "microsoft/phi-4":
@@ -247,15 +249,18 @@ class RitsModel(Model):
             except openai.APIError as e:
                 last_exc = e
                 print(f"ERROR: OPENAI API Error: {e}")
-            except openai.Timeout as e:
+            except httpx.Timeout as e:
                 last_exc = e
-                print(f"ERROR: OPENAI Timeout Error: {e}")
-            except openai.error.APIConnectionError as e:
+                print(f"ERROR: https Timeout Error: {e}")
+            except httpx.NetworkError as e:
                 last_exc = e
-                print(f"ERROR: OPENAI APIConnection Error: {e}")
-            except openai.error.ServiceUnavailableError as e:
+                print(f"ERROR: httpx NetworkError Error: {e}")
+            except httpx.HTTPStatusError as e:
                 last_exc = e
-                print(f"ERROR: OPENAI Service Error: {e}")
+                if e.response.status_code == 503:
+                    print(f"ERROR: Service unavailable (503): {e}")
+                else:
+                    print(f"ERROR: httpx Error: {e}")
         # make a fake response
         return {
             "text": prompt + " OPENAI Error - " + str(last_exc),
